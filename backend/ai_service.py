@@ -288,7 +288,14 @@ def validate_civic_image(image_path, selected_category):
             raise ValueError('Temporary upload is empty')
         LOGGER.info('YOLOv8 inference starting: image_path=%s bytes=%s selected_category=%s', image_path, image_size, selected_category)
         started = time.perf_counter()
-        result = model(image_path, conf=YOLO_PREDICTION_CONFIDENCE, verbose=False)[0]
+        result = model(
+            image_path,
+            conf=YOLO_PREDICTION_CONFIDENCE,
+            imgsz=320,
+            device='cpu',
+            max_det=20,
+            verbose=False
+        )[0]
         prediction_time_ms = round((time.perf_counter() - started) * 1000, 2)
         LOGGER.info('YOLOv8 raw prediction: %s', result.verbose())
         detections = []
@@ -383,7 +390,14 @@ def validate_civic_media(file_storage, selected_category):
                 return {'valid': False, 'reason': 'Video key-frame extraction failed.'}
         best = None
         for source in sources:
-            result = model(source, verbose=False)[0]
+            result = model(
+            source,
+            imgsz=320,
+            device='cpu',
+            max_det=20,
+            verbose=False
+        )[0]
+            
             names = result.names
             for box in result.boxes or []:
                 label = _normalise_yolo_label(names[int(box.cls[0])])

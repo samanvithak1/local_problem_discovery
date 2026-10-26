@@ -126,66 +126,24 @@ def validate_image():
               and result.get('confidence') < LOW_CONFIDENCE_REVIEW_PERCENT):
             manual_review_reason = 'The image received a low AI match score. It can be submitted for official image review.'
         if manual_review_reason:
-            try:
-              visual_candidate = classify_civic_image_zero_shot(temp_path)
-            except Exception as exc:
-              current_app.logger.exception(
-                "Zero-shot image classification failed: %s", exc
-                
-              )
-              visual_candidate = {
-                'candidate_category': None,
-                'candidate_similarity': None,
-                'candidate_margin': None,
-                'candidate_source': None,
-                'model_version': None,
-                'prediction_time_ms': None,
-             }
-            candidate_category = visual_candidate.get('candidate_category') or result.get('detected_category')
-            candidate_confidence = None  # zero-shot similarities are not calibrated probabilities
-            if visual_candidate.get('candidate_category'):
-                if canonical_civic_category(candidate_category) == canonical_civic_category(selected):
-                    # Accept a matching best visual class for submission, while
-                    # preserving its zero-shot provenance and requiring the
-                    # assigned official to verify the evidence. Similarity is
-                    # intentionally not represented as a confidence percent.
-                    manual_review_reason = None
-                    result = {
-                        'valid': True,
-                        'status': 'valid',
-                        'selected_category': canonical_civic_category(selected),
-                        'detected_category': candidate_category,
-                        'candidate_category': candidate_category,
-                        'candidate_confidence': None,
-                        'candidate_similarity': visual_candidate.get('candidate_similarity'),
-                        'candidate_margin': visual_candidate.get('candidate_margin'),
-                        'candidate_source': visual_candidate.get('candidate_source'),
-                        'confidence': None,
-                        'message': f'Best visual AI match: {candidate_category}. Accepted for submission; the match is uncalibrated and should be verified by an official.',
-                        'model_version': visual_candidate.get('model_version'),
-                        'prediction_time_ms': visual_candidate.get('prediction_time_ms'),
-                        'detections': [],
-                        'annotated_png': None,
-                    }
-                else:
-                    manual_review_reason = f'Visual AI candidate: {candidate_category}, which differs from the selected category. Check the category; an official must confirm the image.'
-            if manual_review_reason:
-                result = {
-                    'status': 'review_required',
-                    'selected_category': canonical_civic_category(selected),
-                    'detected_category': None,
-                    'candidate_category': candidate_category,
-                    'candidate_confidence': candidate_confidence,
-                    'candidate_similarity': visual_candidate.get('candidate_similarity'),
-                    'candidate_margin': visual_candidate.get('candidate_margin'),
-                    'candidate_source': visual_candidate.get('candidate_source'),
-                    'confidence': None,
-                    'message': manual_review_reason,
-                    'model_version': visual_candidate.get('model_version') or result.get('model_version'),
-                    'prediction_time_ms': visual_candidate.get('prediction_time_ms') or result.get('prediction_time_ms'),
-                    'detections': [],
-                    'annotated_png': None,
-                }
+          result = {
+            'valid': False,
+            'status': 'review_required',
+            'selected_category': canonical_civic_category(selected),
+            'detected_category': None,
+            'candidate_category': None,
+            'candidate_confidence': None,
+            'candidate_similarity': None,
+            'candidate_margin': None,
+            'candidate_source': None,
+            'confidence': None,
+            'message': manual_review_reason,
+            'model_version': result.get('model_version'),
+            'prediction_time_ms': result.get('prediction_time_ms'),
+            'detections': [],
+            'annotated_png': None,
+        }
+
         validation_status = 'review_required' if manual_review_reason else 'valid'
         if prior_audit:
             # Permit the same citizen to re-run an unsubmitted review photo

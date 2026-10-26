@@ -38,7 +38,8 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import api, { assetUrl, dialNumber } from '../services/api';
+import api, { dialNumber } from '../services/api';
+import { AuthenticatedAssetLink, AuthenticatedImage } from '../components/AuthenticatedAsset';
 import { useTranslation } from 'react-i18next';
 import { CIVIC_CATEGORIES, findCategoryMention } from '../constants/civicCategories';
 
@@ -278,7 +279,7 @@ export default function OfficialDashboard({ user, complaints, dashboard, reload,
           {(item.extension_requests || []).slice(0, 2).map((request) => <Alert key={request.id} severity={request.status === 'Pending' ? 'info' : request.status === 'Approved' ? 'success' : 'warning'} sx={{ mt: 1 }}>
             Extra time: {request.status.toLowerCase()} · {request.requested_hours}h requested{request.reason ? ` · ${request.reason}` : ''}
           </Alert>)}
-          {(item.completion_images || []).length > 0 && <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">{item.completion_images.map((image) => <a key={image.id || image.url} href={assetUrl(image.url || image)} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-slate-600 hover:border-cyan-400"><img src={assetUrl(image.url || image)} alt={`${image.phase || 'Progress'} evidence`} className="h-16 w-20 object-cover" /><span className="block px-2 py-1">{image.phase || 'Progress'} photo</span></a>)}</div>}
+          {(item.completion_images || []).length > 0 && <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">{item.completion_images.map((image) => <AuthenticatedAssetLink key={image.id || image.url} url={image.url || image} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-slate-600 hover:border-cyan-400"><AuthenticatedImage url={image.url || image} alt={`${image.phase || 'Progress'} evidence`} className="h-16 w-20 object-cover" /><span className="block px-2 py-1">{image.phase || 'Progress'} photo</span></AuthenticatedAssetLink>)}</div>}
           <div className="mt-3 border-t border-slate-700 pt-3"><Typography className="!text-xs !font-semibold !text-slate-300">Case timeline</Typography>{(item.history || []).length ? <div className="mt-2 space-y-1">{item.history.slice(-5).reverse().map((entry) => <div key={entry.id} className="text-xs text-slate-400"><span className="font-semibold text-cyan-300">{entry.status_name}</span> · {entry.note || 'Updated'} · {entry.created_at ? formatTime(new Date(entry.created_at)) : ''}</div>)}</div> : <Typography className="!mt-1 !text-xs !text-slate-500">No progress entries yet.</Typography>}</div>
         </motion.div>
       ))}

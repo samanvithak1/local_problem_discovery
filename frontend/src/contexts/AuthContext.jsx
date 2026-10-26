@@ -19,6 +19,29 @@ export function AuthProvider({ children }) {
     if (token) api.defaults.headers.common.Authorization = `Bearer ${token}`;
     return token;
   });
+  // Validate the saved session when the app starts
+useEffect(() => {
+  let cancelled = false;
+
+  const validateSession = async () => {
+    if (!accessToken || !user) return;
+
+    try {
+      await api.get('/user/profile');
+    } catch (error) {
+      if (!cancelled && error.response?.status === 401) {
+        logout();
+      }
+    }
+  };
+
+  validateSession();
+
+  return () => {
+    cancelled = true;
+  };
+}, []); // Runs once when the provider mounts
+
 
   useEffect(() => {
     if (accessToken) {

@@ -4,9 +4,10 @@ import sys
 import logging
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
+from flask_jwt_extended import jwt_required
 from flask_jwt_extended import JWTManager
 from flask_socketio import SocketIO
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, or_, text
 from config import Config
 from models import db, Admin, ComplaintStatus, Department
 from routes.auth import auth_bp
@@ -16,7 +17,7 @@ from routes.official import official_bp
 from routes.user import user_bp
 from routes.ai import ai_bp, validate_image
 from routes.emergency import emergency_bp
-from utils import hash_password
+from utils import hash_password, current_identity, make_response_payload
 from ai_service import load_yolo_model, yolo_status
 from services.alert_service import process_overdue_complaints
 
@@ -201,8 +202,49 @@ def create_app():
     
 
     @app.route('/uploads/<path:filename>')
+    @jwt_required(optional=True)
     def upload_file(filename):
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        identity = current_identity()
+        if not identity.get('id'):
+            return jsonify(make_response_payload('Authentication required')), 401
+
+        from models import Complaint, EvidenceValidation, Image, Official
+        from routes.complaints import official_can_manage_complaint
+
+        upload_url = f'/uploads/{filename}'
+        authorized = False
+        if identity.get('role') == 'admin':
+            authorized = True
+        else:
+            image = Image.query.filter_by(url=upload_url).first()
+            if image:
+                complaint = Complaint.query.get(image.complaint_id)
+                if complaint and identity.get('role') == 'user':
+                    authorized = complaint.user_id == identity.get('id')
+                elif complaint and identity.get('role') == 'official':
+                    official = Official.query.get(identity.get('id'))
+                    authorized = bool(
+                        official and official_can_manage_complaint(official, complaint)
+                    )
+
+        if not authorized and filename.startswith('validations/'):
+            validation = EvidenceValidation.query.filter(
+                or_(
+                    EvidenceValidation.image_path == upload_url,
+                    EvidenceValidation.preview_path == upload_url,
+                )
+            ).first()
+            authorized = bool(
+                validation
+                and identity.get('role') == 'user'
+                and validation.user_id == identity.get('id')
+            )
+
+        if not authorized:
+            return jsonify(make_response_payload('Forbidden')), 403
+        response = send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
 
     return app
 

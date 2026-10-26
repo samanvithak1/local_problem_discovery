@@ -53,6 +53,18 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [values, setValues] = useState(initUserState);
+  useEffect(() => {
+  if (mode !== 'login') return;
+
+  const shouldRemember =
+    localStorage.getItem('ai_remember_email') === 'true';
+  const savedEmail = localStorage.getItem('ai_saved_email') || '';
+
+  if (shouldRemember && savedEmail) {
+    setValues((prev) => ({ ...prev, email: savedEmail }));
+    setRemember(true);
+  }
+}, [mode]); 
   const [language, setLanguage] = useState(i18n.language || 'en');
   const [identityCardFile, setIdentityCardFile] = useState(null);
   const [remember, setRemember] = useState(false);
@@ -171,6 +183,14 @@ export default function AuthPage() {
         const signedInUser = response?.data?.data?.user;
         if (signedInUser?.role !== role) throw new Error(`This account is registered as ${signedInUser?.role || 'a different role'}. Please use the matching sign-in page.`);
         login(signedInUser, response?.data?.data?.accessToken);
+        if (remember) {
+          localStorage.setItem('ai_remember_email', 'true');
+          localStorage.setItem('ai_saved_email', email);
+       } 
+        else {
+          localStorage.removeItem('ai_remember_email');
+          localStorage.removeItem('ai_saved_email');
+       }
         navigate('/dashboard');
       } else {
         if (isAdmin) {

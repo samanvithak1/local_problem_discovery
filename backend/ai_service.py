@@ -81,6 +81,8 @@ YOLO_LABELS = {
 _YOLO_MODEL = None
 _YOLO_LOAD_ATTEMPTED = False
 _YOLO_MODEL_MTIME_NS = None
+_YOLO_ATTEMPTED_PATH = None
+_YOLO_ATTEMPTED_MTIME_NS = None
 _YOLO_STATUS = {'ready': False, 'path': None, 'model_version': None, 'error': 'Model has not been initialised.'}
 LOGGER = logging.getLogger(__name__)
 # Ask YOLO to return weak candidates and allow low-scoring matching detections
@@ -144,10 +146,15 @@ def load_yolo_model():
     classes and would allow unrelated objects through the submission workflow.
     """
     global _YOLO_MODEL, _YOLO_LOAD_ATTEMPTED, _YOLO_STATUS, _YOLO_MODEL_MTIME_NS
+    global _YOLO_ATTEMPTED_PATH, _YOLO_ATTEMPTED_MTIME_NS
     model_path = next((path for path in YOLO_MODEL_CANDIDATES if path and path.is_file()), None)
+    model_mtime_ns = model_path.stat().st_mtime_ns if model_path else None
     # A training run can deploy best.pt after Flask has already started.  Load
     # it on the next request, and reload when atomic deployment changes it.
     if _YOLO_MODEL is not None and model_path is not None and _YOLO_MODEL_MTIME_NS == model_path.stat().st_mtime_ns:
+        return _YOLO_MODEL
+    if (_YOLO_LOAD_ATTEMPTED and model_path == _YOLO_ATTEMPTED_PATH
+            and model_mtime_ns == _YOLO_ATTEMPTED_MTIME_NS):
         return _YOLO_MODEL
     if _YOLO_MODEL is not None:
         _YOLO_MODEL = None
@@ -158,6 +165,8 @@ def load_yolo_model():
     if _YOLO_LOAD_ATTEMPTED and model_path is None:
         return None
     _YOLO_LOAD_ATTEMPTED = True
+    _YOLO_ATTEMPTED_PATH = model_path
+    _YOLO_ATTEMPTED_MTIME_NS = model_mtime_ns
     if model_path is None:
         _YOLO_STATUS = {'ready': False, 'path': str(YOLO_MODEL_CANDIDATES[1]), 'model_version': None,
                         'error': 'YOLOv8 model not found. Please place best.pt inside the models folder.'}

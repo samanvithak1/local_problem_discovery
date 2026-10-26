@@ -203,6 +203,174 @@ class ComplaintFlowTestCase(unittest.TestCase):
         self.assertTrue(evidence)
         self.assertEqual(evidence[0]['phase'], 'In Progress')
 
+    def test_citizen_endpoints_only_expose_the_authenticated_users_complaints(self):
+        with self.app.app_context():
+            from flask_jwt_extended import create_access_token
+            from models import db, User, Complaint, ComplaintStatus
+
+            other_user = User(
+                full_name='Other Citizen',
+                email='other-citizen@example.com',
+                phone='+919999999997',
+                password_hash=self.app_module.hash_password('password123'),
+                district='Other District',
+                taluk='Other Taluk',
+                village='Other Village',
+                address='Other Address',
+            )
+            db.session.add(other_user)
+            db.session.flush()
+            submitted = ComplaintStatus.query.filter_by(name='Submitted').first()
+            own_complaint = Complaint(
+                title='Own complaint', category='Road Damage', description='Own issue',
+                priority='Low', location='Own location', user_id=self.user_id,
+                status_id=submitted.id, latitude='12.34', longitude='77.89',
+            )
+            other_complaint = Complaint(
+                title='Other complaint', category='Road Damage', description='Private issue',
+                priority='Low', location='Private location', user_id=other_user.id,
+                status_id=submitted.id, latitude='12.34', longitude='77.89',
+            )
+            db.session.add_all([own_complaint, other_complaint])
+            db.session.commit()
+            own_id = own_complaint.id
+            other_id = other_complaint.id
+            token = create_access_token(
+                identity=str(other_user.id),
+                additional_claims={'role': 'user', 'name': other_user.full_name},
+            )
+
+        client = self.app.test_client()
+        headers = {'Authorization': f'Bearer {token}'}
+        complaints_response = client.get('/api/complaints/', headers=headers)
+        complaint_ids = [
+            item['id'] for item in complaints_response.get_json()['data']['complaints']
+        ]
+        self.assertEqual(complaints_response.status_code, 200)
+        self.assertEqual(complaint_ids, [other_id])
+
+        profile_response = client.get('/api/user/profile', headers=headers)
+        profile_ids = [
+            item['id'] for item in profile_response.get_json()['data']['complaints']
+        ]
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertEqual(profile_ids, [other_id])
+
+        stats_response = client.get('/api/complaints/stats', headers=headers)
+        self.assertEqual(stats_response.status_code, 200)
+        self.assertEqual(stats_response.get_json()['data']['summary']['totalComplaints'], 1)
+
+        nearby_response = client.get(
+            '/api/complaints/nearby?latitude=12.34&longitude=77.89',
+            headers=headers,
+        )
+        nearby_ids = [
+            item['id'] for item in nearby_response.get_json()['data']['complaints']
+        ]
+        self.assertEqual(nearby_response.status_code, 200)
+        self.assertEqual(nearby_ids, [other_id])
+
+        update_response = client.put(
+            f'/api/complaints/{own_id}/update',
+            json={'remarks': 'Attempted cross-account update'},
+            headers=headers,
+        )
+        delete_response = client.delete(f'/api/complaints/{own_id}', headers=headers)
+        self.assertEqual(update_response.status_code, 403)
+        self.assertEqual(delete_response.status_code, 404)
+
+    def test_unsupported_jwt_role_cannot_list_or_update_complaints(self):
+        with self.app.app_context():
+            from flask_jwt_extended import create_access_token
+
+            token = create_access_token(
+                identity='1',
+                additional_claims={'role': 'support', 'name': 'Unsupported'},
+            )
+
+        client = self.app.test_client()
+        headers = {'Authorization': f'Bearer {token}'}
+        list_response = client.get('/api/complaints/', headers=headers)
+        stats_response = client.get('/api/complaints/stats', headers=headers)
+        anonymous_stats_response = client.get('/api/complaints/stats')
+        update_response = client.put(
+            '/api/complaints/1/update',
+            json={'statusName': 'Resolved'},
+            headers=headers,
+        )
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(stats_response.status_code, 403)
+        self.assertEqual(anonymous_stats_response.status_code, 401)
+        self.assertEqual(update_response.status_code, 403)
+
+    def test_uploaded_complaint_evidence_requires_owner_or_authorized_staff(self):
+        with self.app.app_context():
+            from flask_jwt_extended import create_access_token
+            from models import db, Complaint, ComplaintStatus, EvidenceValidation, Image
+
+            submitted = ComplaintStatus.query.filter_by(name='Submitted').first()
+            complaint = Complaint(
+                title='Private evidence', category='Road Damage', description='Evidence issue',
+                priority='Low', location='Private location', user_id=self.user_id,
+                status_id=submitted.id,
+            )
+            db.session.add(complaint)
+            db.session.flush()
+            filename = f'{complaint.id}_evidence.jpg'
+            db.session.add(Image(
+                complaint_id=complaint.id, url=f'/uploads/{filename}',
+                phase='Citizen complaint evidence',
+            ))
+            validation_path = '/uploads/validations/evidence.jpg'
+            db.session.add(EvidenceValidation(
+                user_id=self.user_id,
+                selected_category='Road Damage',
+                content_sha256='a' * 64,
+                validation_status='valid',
+                message='Evidence validated.',
+                image_path=validation_path,
+            ))
+            db.session.add(Image(
+                complaint_id=complaint.id, url=validation_path,
+                phase='Validated evidence',
+            ))
+            db.session.commit()
+            own_token = create_access_token(
+                identity=str(self.user_id),
+                additional_claims={'role': 'user', 'name': 'Test Citizen'},
+            )
+            other_token = create_access_token(
+                identity='9999',
+                additional_claims={'role': 'user', 'name': 'Other Citizen'},
+            )
+            official_token = create_access_token(
+                identity=str(self.official_id),
+                additional_claims={'role': 'official', 'name': 'Test Official'},
+            )
+            upload_folder = os.path.join(self.tmpdir, 'uploads')
+            validation_folder = os.path.join(upload_folder, 'validations')
+            os.makedirs(validation_folder, exist_ok=True)
+            with open(os.path.join(upload_folder, filename), 'wb') as evidence:
+                evidence.write(b'private evidence')
+            with open(os.path.join(validation_folder, 'evidence.jpg'), 'wb') as evidence:
+                evidence.write(b'validated evidence')
+            self.app.config['UPLOAD_FOLDER'] = upload_folder
+
+        client = self.app.test_client()
+        path = f'/uploads/{filename}'
+        validation_url = '/uploads/validations/evidence.jpg'
+        owner_response = client.get(path, headers={'Authorization': f'Bearer {own_token}'})
+        other_response = client.get(path, headers={'Authorization': f'Bearer {other_token}'})
+        official_response = client.get(
+            validation_url, headers={'Authorization': f'Bearer {official_token}'}
+        )
+        anonymous_response = client.get(path)
+        self.assertEqual(owner_response.status_code, 200)
+        self.assertEqual(owner_response.headers['Cache-Control'], 'private, no-store')
+        self.assertEqual(other_response.status_code, 403)
+        self.assertEqual(official_response.status_code, 200)
+        self.assertEqual(anonymous_response.status_code, 401)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -71,6 +71,28 @@ def official_can_manage_complaint(official, complaint):
     return official.department.name == infer_department_for_category(complaint.category)
 
 
+def complaints_visible_to(identity):
+    """Return complaints visible to a citizen, official, or administrator."""
+    role = identity.get('role')
+    if role == 'user':
+        return Complaint.query.filter_by(user_id=identity['id']).order_by(
+            Complaint.priority_score.desc(), Complaint.created_at.asc()
+        ).all()
+    if role == 'official':
+        official = Official.query.get_or_404(identity['id'])
+        return [
+            complaint for complaint in Complaint.query.order_by(
+                Complaint.priority_score.desc(), Complaint.created_at.asc()
+            ).all()
+            if official_can_manage_complaint(official, complaint)
+        ]
+    if role == 'admin':
+        return Complaint.query.order_by(
+            Complaint.priority_score.desc(), Complaint.created_at.asc()
+        ).all()
+    return None
+
+
 @complaints_bp.route('', methods=['GET', 'OPTIONS'])
 @complaints_bp.route('/', methods=['GET', 'OPTIONS'])
 @jwt_required(optional=True)
@@ -80,20 +102,10 @@ def list_complaints():
     identity = current_identity()
     if not identity.get('id'):
         return jsonify(make_response_payload('Authentication required')), 401
-    role = identity.get('role')
-    user_id = identity.get('id')
+    if identity.get('role') not in {'user', 'official', 'admin'}:
+        return jsonify(make_response_payload('Forbidden')), 403
     process_overdue_complaints()
-    query = Complaint.query
-    if role == 'user':
-        query = query.filter_by(user_id=user_id)
-    elif role == 'official':
-        official = Official.query.get_or_404(user_id)
-        complaints = [
-            complaint for complaint in query.order_by(Complaint.priority_score.desc(), Complaint.created_at.asc()).all()
-            if official_can_manage_complaint(official, complaint)
-        ]
-        return jsonify(make_response_payload('Complaints loaded', {'complaints': [c.to_dict() for c in complaints]})), 200
-    complaints = query.order_by(Complaint.priority_score.desc(), Complaint.created_at.asc()).all()
+    complaints = complaints_visible_to(identity)
     return jsonify(make_response_payload('Complaints loaded', {'complaints': [c.to_dict() for c in complaints]})), 200
 
 
@@ -103,7 +115,7 @@ def decide_deadline_extension(complaint_id, request_id):
     if request.method == 'OPTIONS':
         return jsonify(make_response_payload('Preflight OK', {})), 200
     identity = current_identity()
-    if identity.get('role') != 'user':
+    if identity.get('role') != 'user' or not identity.get('id'):
         return jsonify(make_response_payload('Only the citizen who filed this complaint can decide the request')), 403
     complaint = Complaint.query.get_or_404(complaint_id)
     if complaint.user_id != identity.get('id'):
@@ -154,7 +166,7 @@ def create_complaint():
     if request.method == 'OPTIONS':
         return jsonify(make_response_payload('Preflight OK', {})), 200
     identity = current_identity()
-    if identity.get('role') != 'user':
+    if identity.get('role') != 'user' or not identity.get('id'):
         return jsonify(make_response_payload('Only citizens can submit complaints')), 403
     data = request.get_json() or {}
     missing_fields = [field for field in ('title', 'category', 'description', 'location') if not str(data.get(field, '')).strip()]
@@ -294,20 +306,21 @@ def delete_complaint(complaint_id):
     if request.method == 'OPTIONS':
         return jsonify(make_response_payload('Preflight OK', {})), 200
     identity = current_identity()
-    complaint = Complaint.query.get_or_404(complaint_id)
-    status_name = (complaint.status.name if complaint.status else '').strip().lower()
-    if status_name not in {'submitted', 'accepted', 'completed', 'resolved'}:
-        return jsonify(make_response_payload('Only submitted, accepted, or completed complaints can be deleted')), 400
-
-    if identity.get('role') == 'user':
-        if complaint.user_id != identity.get('id'):
-            return jsonify(make_response_payload('Unauthorized')), 403
-    elif identity.get('role') == 'official':
-        official = Official.query.get_or_404(identity.get('id'))
+    role = identity.get('role')
+    if not identity.get('id'):
+        return jsonify(make_response_payload('Authentication required')), 401
+    if role == 'user':
+        complaint = Complaint.query.filter_by(id=complaint_id, user_id=identity['id']).first_or_404()
+    elif role == 'official':
+        official = Official.query.get_or_404(identity['id'])
+        complaint = Complaint.query.get_or_404(complaint_id)
         if not official_can_manage_complaint(official, complaint):
             return jsonify(make_response_payload('Unauthorized')), 403
     else:
-        return jsonify(make_response_payload('Unauthorized')), 403
+        return jsonify(make_response_payload('Forbidden')), 403
+    status_name = (complaint.status.name if complaint.status else '').strip().lower()
+    if status_name not in {'submitted', 'accepted', 'completed', 'resolved'}:
+        return jsonify(make_response_payload('Only submitted, accepted, or completed complaints can be deleted')), 400
 
     images = list(complaint.completion_images)
     image_files = [image.url for image in images if image.url.startswith('/uploads/')]
@@ -339,6 +352,10 @@ def update_complaint(complaint_id):
         return jsonify(make_response_payload('Preflight OK', {})), 200
     identity = current_identity()
     role = identity.get('role')
+    if not identity.get('id'):
+        return jsonify(make_response_payload('Authentication required')), 401
+    if role not in {'user', 'official'}:
+        return jsonify(make_response_payload('Forbidden')), 403
     data = request.get_json() or {}
     complaint = Complaint.query.get_or_404(complaint_id)
     if role == 'user' and complaint.user_id != identity.get('id'):
@@ -448,10 +465,16 @@ def update_complaint_progress(complaint_id):
 def complaint_stats():
     if request.method == 'OPTIONS':
         return jsonify(make_response_payload('Preflight OK', {})), 200
-    total = Complaint.query.count()
-    submitted = Complaint.query.join(ComplaintStatus).filter(ComplaintStatus.name == 'Submitted').count()
-    in_progress = Complaint.query.join(ComplaintStatus).filter(ComplaintStatus.name == 'In Progress').count()
-    resolved = Complaint.query.join(ComplaintStatus).filter(ComplaintStatus.name == 'Resolved').count()
+    identity = current_identity()
+    if not identity.get('id'):
+        return jsonify(make_response_payload('Authentication required')), 401
+    complaints = complaints_visible_to(identity)
+    if complaints is None:
+        return jsonify(make_response_payload('Forbidden')), 403
+    total = len(complaints)
+    submitted = sum(1 for complaint in complaints if complaint.status and complaint.status.name == 'Submitted')
+    in_progress = sum(1 for complaint in complaints if complaint.status and complaint.status.name == 'In Progress')
+    resolved = sum(1 for complaint in complaints if complaint.status and complaint.status.name == 'Resolved')
     return jsonify(make_response_payload('Complaint analytics', {
         'summary': {
             'totalComplaints': total,
@@ -466,21 +489,37 @@ def complaint_stats():
 def nearby_complaints():
     if request.method == 'OPTIONS':
         return jsonify(make_response_payload('Preflight OK', {})), 200
+    identity = current_identity()
+    if not identity.get('id'):
+        return jsonify(make_response_payload('Authentication required')), 401
+    complaints = complaints_visible_to(identity)
+    if complaints is None:
+        return jsonify(make_response_payload('Forbidden')), 403
     try:
         latitude, longitude = float(request.args['latitude']), float(request.args['longitude'])
     except (KeyError, TypeError, ValueError):
         return jsonify(make_response_payload('latitude and longitude are required')), 400
-    radius = min(max(float(request.args.get('radius', 5)), .1), 20)
+    try:
+        radius = min(max(float(request.args.get('radius', 5)), .1), 20)
+    except (TypeError, ValueError):
+        return jsonify(make_response_payload('radius must be a number')), 400
     items = []
-    for complaint in Complaint.query.filter(Complaint.latitude.isnot(None), Complaint.longitude.isnot(None)).all():
+    for complaint in complaints:
+        if complaint.latitude is None or complaint.longitude is None:
+            continue
         try:
             distance = (((float(complaint.latitude)-latitude) ** 2 + (float(complaint.longitude)-longitude) ** 2) ** .5) * 111
         except (TypeError, ValueError):
             continue
         if distance <= radius:
-            item = complaint.to_dict()
-            # Public endpoint intentionally does not leak citizen identity.
-            item.pop('citizen_name', None); item.pop('citizen_phone', None); item.pop('user_id', None)
-            item['distance_km'] = round(distance, 2)
-            items.append(item)
+            items.append({
+                'id': complaint.id,
+                'category': complaint.category,
+                'priority': complaint.priority,
+                'status': complaint.status.name if complaint.status else None,
+                'latitude': complaint.latitude,
+                'longitude': complaint.longitude,
+                'created_at': complaint.created_at.isoformat() + 'Z',
+                'distance_km': round(distance, 2),
+            })
     return jsonify(make_response_payload('Nearby complaints loaded', {'complaints': sorted(items, key=lambda item: item['distance_km'])})), 200

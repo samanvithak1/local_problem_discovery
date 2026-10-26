@@ -35,7 +35,7 @@ ADMIN_SETUP_KEY=<private-bootstrap-key>
 GOVERNMENT_APPROVAL_CODE=<private-government-code>
 MAX_UPLOAD_BYTES=10485760
 YOLO_MODEL_PATH=/app/models/best.pt
-GOOGLE_CLIENT_ID=<OAuth-web-client-id>
+GOOGLE_CLIENT_ID=803354370207-30c9ir1p644jap3iankqurh3bm7f464r.apps.googleusercontent.com
 STORAGE_BACKEND=s3
 STORAGE_BUCKET=<bucket-name>
 STORAGE_REGION=<region>
@@ -63,7 +63,7 @@ Import the repository in Vercel and choose `frontend` as the project root. Confi
 ```ini
 VITE_API_BASE_URL=https://<your-api-domain>
 VITE_SOCKET_URL=https://<your-api-domain>
-VITE_GOOGLE_CLIENT_ID=<OAuth-web-client-id>
+VITE_GOOGLE_CLIENT_ID=803354370207-30c9ir1p644jap3iankqurh3bm7f464r.apps.googleusercontent.com
 ```
 
 Deploy with the Vercel build command `npm run build`. The committed `vercel.json` rewrites every client route to `index.html`, so refreshes on `/dashboard` and authentication routes do not return 404.

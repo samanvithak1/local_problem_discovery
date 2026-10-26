@@ -132,15 +132,15 @@ def validate_image():
               current_app.logger.exception(
                 "Zero-shot image classification failed: %s", exc
                 
-         )
-    visual_candidate = {
-        'candidate_category': None,
-        'candidate_similarity': None,
-        'candidate_margin': None,
-        'candidate_source': None,
-        'model_version': None,
-        'prediction_time_ms': None,
-    }
+              )
+              visual_candidate = {
+                'candidate_category': None,
+                'candidate_similarity': None,
+                'candidate_margin': None,
+                'candidate_source': None,
+                'model_version': None,
+                'prediction_time_ms': None,
+             }
             candidate_category = visual_candidate.get('candidate_category') or result.get('detected_category')
             candidate_confidence = None  # zero-shot similarities are not calibrated probabilities
             if visual_candidate.get('candidate_category'):

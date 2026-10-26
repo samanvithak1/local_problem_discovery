@@ -198,9 +198,7 @@ def create_app():
             'message': 'Backend running',
             'yolo': yolo_status()
         }), 200
-    @app.route('/api/health')
-    def health_check():
-        return jsonify({'status': 'ok', 'message': 'Backend running', 'yolo': yolo_status()}), 200
+    
 
     @app.route('/uploads/<path:filename>')
     def upload_file(filename):

@@ -126,7 +126,21 @@ def validate_image():
               and result.get('confidence') < LOW_CONFIDENCE_REVIEW_PERCENT):
             manual_review_reason = 'The image received a low AI match score. It can be submitted for official image review.'
         if manual_review_reason:
-            visual_candidate = classify_civic_image_zero_shot(temp_path)
+            try:
+              visual_candidate = classify_civic_image_zero_shot(temp_path)
+            except Exception as exc:
+              current_app.logger.exception(
+                "Zero-shot image classification failed: %s", exc
+                
+         )
+    visual_candidate = {
+        'candidate_category': None,
+        'candidate_similarity': None,
+        'candidate_margin': None,
+        'candidate_source': None,
+        'model_version': None,
+        'prediction_time_ms': None,
+    }
             candidate_category = visual_candidate.get('candidate_category') or result.get('detected_category')
             candidate_confidence = None  # zero-shot similarities are not calibrated probabilities
             if visual_candidate.get('candidate_category'):

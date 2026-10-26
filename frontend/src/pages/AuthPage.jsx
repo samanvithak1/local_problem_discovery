@@ -298,6 +298,23 @@ export default function AuthPage() {
           const response = await api.post('/auth/google', { credential: tokenResponse.credential, role: roleToUse });
           if (response.data.data.user?.role !== roleToUse) throw new Error(`This Google account is registered as ${response.data.data.user?.role || 'a different role'}. Use a separate account for ${roleToUse} access.`);
           login(response.data.data.user, response.data.data.accessToken);
+          // Remember the Google email on this device
+          const googlePayload = JSON.parse(
+            atob(
+              tokenResponse.credential.split('.')[1]
+              .replace(/-/g, '+')
+              .replace(/_/g, '/')
+              .padEnd(
+                Math.ceil(tokenResponse.credential.split('.')[1].length / 4) * 4,
+               '='
+              )
+             )
+          );
+
+          localStorage.setItem('ai_saved_email', googlePayload.email || '');
+          localStorage.setItem('ai_remember_email', 'true');
+          
+          
           navigate('/dashboard');
         } catch (error) {
           const serverMsg = error?.response?.data?.message || error.message || 'Google sign-in failed.';

@@ -66,14 +66,7 @@ def validate_image():
             candidate = prior_audit.candidate_category
             candidate_source = 'zero_shot' if candidate and 'OpenCLIP' in (prior_audit.model_version or '') else None
             prediction_time_ms = None
-            if prior_audit.image_path and not candidate:
-                prior_image = os.path.join(current_app.config['UPLOAD_FOLDER'], 'validations',
-                                           os.path.basename(prior_audit.image_path))
-                if os.path.isfile(prior_image):
-                    visual_candidate = classify_civic_image_zero_shot(prior_image)
-                    candidate = visual_candidate.get('candidate_category')
-                    candidate_source = visual_candidate.get('candidate_source')
-                    prediction_time_ms = visual_candidate.get('prediction_time_ms')
+
             linked_complaint = f'complaint #{prior_audit.complaint_id}' if prior_audit.complaint_id else 'another account'
             message = f'This image is already attached to {linked_complaint} and cannot be submitted again.'
             if candidate:

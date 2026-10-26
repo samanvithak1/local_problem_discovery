@@ -46,5 +46,13 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+export const validateImage = async (imageFile, selectedCategory) => {
+  const formData = new FormData();
+  formData.append("image", imageFile);
+  formData.append("selected_category", selectedCategory);
+
+  const response = await api.post("/validate-image", formData);
+  return response.data;
+};
 
 export default api;

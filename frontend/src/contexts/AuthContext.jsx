@@ -29,9 +29,17 @@ useEffect(() => {
     try {
       await api.get('/user/profile');
     } catch (error) {
-      if (!cancelled && error.response?.status === 401) {
-        logout();
-      }
+      if (cancelled) 
+        return;
+      if (error.response?.status === 401) {
+          logout();
+        } else {
+          console.error(
+            'Session validation failed:',
+            error.response?.status || error.message
+          );
+        }
+      
     }
   };
 

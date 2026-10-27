@@ -158,7 +158,7 @@ def create_app():
     ensure_trained_model()
     # Validate the real detector once at startup. A bad/missing model never
     # crashes the API; validation requests receive the explicit status instead.
-    load_yolo_model()
+    
 
     # Initialize SocketIO with the Flask app
     socketio.init_app(app, cors_allowed_origins='*')

@@ -39,13 +39,8 @@ def validate_image():
         return jsonify({'status': 'invalid', 'message': f'Unsupported civic category: {selected or "(empty)"}.'}), 400
     if not upload or not upload.filename:
         return jsonify({'status': 'invalid', 'message': 'Choose an image file to validate.'}), 400
-    model_state = yolo_status()
-    model_categories = {canonical_civic_category(label) for label in model_state.get('class_names', {}).values()}
     manual_review_reason = None
-    if not model_state['ready']:
-        manual_review_reason = 'The trained civic detector is unavailable. A general visual AI check and official review will be used.'
-    elif canonical_civic_category(selected) not in model_categories:
-        manual_review_reason = 'The trained civic detector does not include this category. A general visual AI check and official review will be used.'
+    
     suffix = os.path.splitext(upload.filename)[1].lower()
     if suffix not in IMAGE_EXTENSIONS:
         return jsonify({'status': 'invalid', 'message': 'Unsupported image format. Use JPG, PNG, WebP, BMP, TIFF, GIF, AVIF, or JPEG 2000.'}), 400

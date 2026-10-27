@@ -96,12 +96,24 @@ def validate_image():
         with NamedTemporaryFile(delete=False, suffix='.jpg') as temp:
             normalized.save(temp, format='JPEG', quality=95, optimize=True)
             temp_path = temp.name
-        if not manual_review_reason:
-            result = validate_civic_image(temp_path, selected)
-        else:
-            result = {'valid': False, 'status': 'review_required', 'selected_category': canonical_civic_category(selected),
-                      'detected_category': None, 'confidence': None, 'message': manual_review_reason,
-                      'model_version': None, 'detections': []}
+         
+       
+        manual_review_reason = (
+            'The image file is readable, but automatic AI detection is '
+            'temporarily unavailable. The image can be submitted for official review.'
+        )
+
+        result = {
+            'valid': False,
+            'status': 'review_required',
+            'selected_category': canonical_civic_category(selected),
+            'detected_category': None,
+            'confidence': None,
+            'message': manual_review_reason,
+            'model_version': None,
+            'detections': [],
+        }
+
         if result.get('inference_error'):
             current_app.logger.error('YOLOv8 inference failed during image validation: %s', result['message'])
             manual_review_reason = 'The AI could not finish checking this image. It can still be submitted for official image review.'

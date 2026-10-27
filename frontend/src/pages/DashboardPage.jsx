@@ -111,20 +111,62 @@ export default function DashboardPage() {
     p => setForm(previous => ({ ...previous, latitude: p.coords.latitude.toFixed(6), longitude: p.coords.longitude.toFixed(6), location: previous.location || 'Current location' })),
     () => setNotice({ type: 'error', text: 'Location permission was not granted. You can enter it manually.' })
   );
+  
   const validateSelectedImage = async (file, selectedCategory) => {
     if (!file) return;
-    const requestId = ++imageValidationRequestId.current;
-    setValidationBusy(true);
-    setImageValidation({ status: 'loading', selected_category: selectedCategory, message: 'Running AI validation...' });
-    try {
-      const data = new FormData(); data.append('selected_category', selectedCategory); data.append('image', file);
-      const response = await api.post('/validate-image', data);
-      if (requestId === imageValidationRequestId.current) setImageValidation(response.data);
-    } catch (error) {
-      const result = error?.response?.data || {};
-      if (requestId === imageValidationRequestId.current) setImageValidation({ ...result, status: result.status || 'invalid', selected_category: result.selected_category || selectedCategory, message: result.message || 'Image validation could not be completed.' });
-    } finally { if (requestId === imageValidationRequestId.current) setValidationBusy(false); }
-  };
+
+  const requestId = ++imageValidationRequestId.current;
+
+  setValidationBusy(true);
+  setImageValidation({
+    status: 'loading',
+    selected_category: selectedCategory,
+    message: 'Checking image...',
+  });
+
+  try {
+    const data = new FormData();
+    data.append('selected_category', selectedCategory);
+    data.append('image', file);
+
+    const response = await api.post('/validate-image', data);
+    const result = response.data || {};
+
+    if (requestId === imageValidationRequestId.current) {
+      setImageValidation({
+        ...result,
+        status: result.status || 'invalid',
+        selected_category: result.selected_category || selectedCategory,
+        message:
+          result.message ||
+          (result.status === 'review_required'
+            ? 'Image received. Official review is required.'
+            : result.status === 'valid'
+              ? 'Image validation successful.'
+              : 'Image validation could not be completed.'),
+      });
+    }
+  } catch (error) {
+    const result = error?.response?.data || {};
+
+    if (requestId === imageValidationRequestId.current) {
+      setImageValidation({
+        ...result,
+        status: result.status || 'invalid',
+        selected_category: result.selected_category || selectedCategory,
+        message:
+          result.message ||
+          error.message ||
+          'Image validation could not be completed.',
+      });
+    }
+  } finally {
+    if (requestId === imageValidationRequestId.current) {
+      setValidationBusy(false);
+    }
+  }
+};
+
   const decideExtensionRequest = async (complaint, request, decision) => {
     try {
       const response = await api.put(`/complaints/${complaint.id}/extension-requests/${request.id}`, { decision });
